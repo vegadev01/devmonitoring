@@ -10,7 +10,7 @@ import { IconBolt, IconCheck, IconClock, IconExternal, IconPulse, IconRefresh, I
 import { AppForm, type App } from "@/components/AppForm";
 
 type Detail = {
-  app: App & { method: string; expectedStatus: number; timeoutMs: number };
+  app: App & { method: string; expectedStatus: number; timeoutMs: number; insecureTls: boolean };
   summary: { uptime: number | null; checks: number; avgLatency: number | null; p95Latency: number | null };
   series: { t: number; latencyMs: number | null; up: number | null }[];
   recent: { id: string; ok: boolean; statusCode: number | null; latencyMs: number | null; error: string | null; createdAt: string }[];
@@ -53,7 +53,7 @@ export default function AppDetail() {
         <div className="row between small muted" style={{ marginTop: 6 }}><span>Last 30 checks</span><span>Updated {ago(app.lastCheckedAt)}</span></div>
       </div>
 
-      <div className="row between wrap"><span className="muted small">{app.method} · expects {app.expectedStatus} · timeout {app.timeoutMs / 1000}s{app.server && <> · hosted on <Link href={`/servers/${app.server.id}`} style={{ color: "var(--accent)" }}>{app.server.name}</Link></>}</span><RangeTabs value={range} onChange={setRange} /></div>
+      <div className="row between wrap"><span className="muted small">{app.method} · expects {app.expectedStatus} · timeout {app.timeoutMs / 1000}s{app.insecureTls && " · self-signed TLS allowed"}{app.server && <> · hosted on <Link href={`/servers/${app.server.id}`} style={{ color: "var(--accent)" }}>{app.server.name}</Link></>}</span><RangeTabs value={range} onChange={setRange} /></div>
 
       <div className="grid stats">
         <Stat i={1} label="Uptime" icon={<IconPulse />} value={summary.uptime} unit="%" decimals={2} sub={`${summary.checks} checks`} />

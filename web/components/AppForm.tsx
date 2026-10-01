@@ -10,13 +10,14 @@ export type App = {
 };
 type ServerLite = { id: string; name: string };
 
-export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number }; onDone: () => void; onClose: () => void }) {
+export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number; insecureTls?: boolean }; onDone: () => void; onClose: () => void }) {
   const { data: servers } = useApi<ServerLite[]>("/servers", 0);
   const [f, setF] = useState({
     name: initial?.name ?? "", url: initial?.url ?? "https://", description: initial?.description ?? "",
     kind: initial?.kind ?? "web", environment: initial?.environment ?? "production",
     method: initial?.method ?? "GET", expectedStatus: initial?.expectedStatus ?? 200, timeoutMs: initial?.timeoutMs ?? 10000,
     serverId: initial?.server?.id ?? "",
+    insecureTls: initial?.insecureTls ?? false,
   });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,6 +53,10 @@ export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> &
         </label>
         <label className="field">Expected status<input className="input" type="number" value={f.expectedStatus} onChange={(e) => set("expectedStatus", Number(e.target.value))} /></label>
         <label className="field">Timeout (ms)<input className="input" type="number" step={1000} value={f.timeoutMs} onChange={(e) => set("timeoutMs", Number(e.target.value))} /></label>
+        <label className="full row" style={{ gap: 10, fontSize: 13.5, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.insecureTls} onChange={(e) => set("insecureTls", e.target.checked)} style={{ width: 17, height: 17, accentColor: "var(--brand-600)" }} />
+          <span>Allow self-signed certificate <span className="muted">— for dev/staging hosts served on a raw IP</span></span>
+        </label>
         <label className="field full">Description<input className="input" value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Optional" /></label>
         {err && <div className="alert full">{err}</div>}
         <div className="row full" style={{ justifyContent: "flex-end" }}>

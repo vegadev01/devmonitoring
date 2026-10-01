@@ -61,7 +61,7 @@ serversRouter.post("/", async (req, res) => {
     id: server.id,
     name: server.name,
     apiKey, // shown exactly once
-    installCommand: `curl -fsSL ${api}/agent/install.sh | SERVER_ID="${server.id}" API_KEY="${apiKey}" API_URL="${api}" sudo -E bash`,
+    installCommand: `curl -fsSL ${api}/agent/install.sh | sudo SERVER_ID="${server.id}" API_KEY="${apiKey}" API_URL="${api}" bash`,
   });
 });
 

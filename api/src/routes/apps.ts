@@ -32,6 +32,7 @@ function parseBody(b: any, partial = false) {
   if (b.expectedStatus !== undefined) data.expectedStatus = Math.min(599, Math.max(100, Number(b.expectedStatus) || 200));
   if (b.timeoutMs !== undefined) data.timeoutMs = Math.min(60000, Math.max(1000, Number(b.timeoutMs) || 10000));
   if (b.enabled !== undefined) data.enabled = Boolean(b.enabled);
+  if (b.insecureTls !== undefined) data.insecureTls = Boolean(b.insecureTls);
   if (b.serverId !== undefined) data.serverId = b.serverId || null;
   return data;
 }

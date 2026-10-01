@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 # Needs root for docker/ufw. Re-run ourselves through sudo if started as a normal user.
-if [ "$(id -u)" -ne 0 ]; then exec sudo -E bash "$0" "$@"; fi
+if [ "$(id -u)" -ne 0 ]; then exec sudo bash "$0" "$@"; fi
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
