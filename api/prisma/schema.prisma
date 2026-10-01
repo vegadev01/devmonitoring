@@ -41,7 +41,8 @@ model App {
   id             String     @id @default(cuid())
   name           String
   description    String?
-  url            String
+  url            String // public address of the app
+  healthUrl      String? // endpoint probed by checks: absolute URL or a path like /health (defaults to url)
   kind           String     @default("web") // web | api | service
   environment    String     @default("production") // production | staging | dev
   method         String     @default("GET")
@@ -85,4 +86,23 @@ model Incident {
 
   @@index([startedAt])
   @@index([resolvedAt])
+}
+
+// A request saved in API Studio (the built-in endpoint tester).
+model SavedRequest {
+  id          String   @id @default(cuid())
+  name        String
+  collection  String   @default("General")
+  method      String   @default("GET")
+  url         String
+  params      Json     @default("[]")
+  headers     Json     @default("[]")
+  bodyType    String   @default("none") // none | json | text | form
+  body        String?
+  auth        Json     @default("{}")
+  insecureTls Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([collection])
 }

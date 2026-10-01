@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../db";
 import { requireAdmin } from "../auth";
-import { runCheck } from "../checker";
+import { probe, runCheck } from "../checker";
 import { downsample, parseRange } from "../range";
 
 export const appsRouter = Router();
@@ -23,6 +23,20 @@ function parseBody(b: any, partial = false) {
       data.url = u.toString();
     } catch {
       err("A valid http(s) URL is required");
+    }
+  }
+  if (b.healthUrl !== undefined) {
+    const h = typeof b.healthUrl === "string" ? b.healthUrl.trim() : "";
+    if (!h) data.healthUrl = null;
+    else if (h.startsWith("/")) data.healthUrl = h;
+    else {
+      try {
+        const u = new URL(h);
+        if (!/^https?:$/.test(u.protocol)) throw 0;
+        data.healthUrl = u.toString();
+      } catch {
+        err("Health-check endpoint must be a path like /health or a full http(s) URL");
+      }
     }
   }
   if (b.description !== undefined) data.description = b.description ? String(b.description) : null;
@@ -57,6 +71,24 @@ appsRouter.post("/", async (req, res) => {
     const app = await prisma.app.create({ data: parseBody(req.body) as any });
     runCheck(app).catch(() => {});
     res.status(201).json(app);
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+});
+
+// Ping a configuration before saving it (used by the "Ping" button on the app form).
+appsRouter.post("/test", async (req, res) => {
+  try {
+    const d = parseBody({ name: "test", ...req.body });
+    const result = await probe({
+      url: d.url as string,
+      healthUrl: (d.healthUrl as string | null | undefined) ?? null,
+      method: (d.method as string) ?? "GET",
+      expectedStatus: (d.expectedStatus as number) ?? 200,
+      timeoutMs: (d.timeoutMs as number) ?? 10000,
+      insecureTls: Boolean(d.insecureTls),
+    });
+    res.json(result);
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }

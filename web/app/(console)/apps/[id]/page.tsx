@@ -10,7 +10,7 @@ import { IconBolt, IconCheck, IconClock, IconExternal, IconPulse, IconRefresh, I
 import type { App } from "@/components/AppForm";
 
 type Detail = {
-  app: App & { method: string; expectedStatus: number; timeoutMs: number; insecureTls: boolean };
+  app: App & { method: string; expectedStatus: number; timeoutMs: number; insecureTls: boolean; healthUrl: string | null };
   summary: { uptime: number | null; checks: number; avgLatency: number | null; p95Latency: number | null };
   series: { t: number; latencyMs: number | null; up: number | null }[];
   recent: { id: string; ok: boolean; statusCode: number | null; latencyMs: number | null; error: string | null; createdAt: string }[];
@@ -27,6 +27,7 @@ export default function AppDetail() {
   if (loading && !data) return <div className="stack"><div className="card"><Skeleton h={80} /></div><div className="card"><Skeleton h={240} /></div></div>;
   if (!data) return <div className="card"><Empty icon={<IconShield />} title="Application not found"><Link href="/apps" style={{ color: "var(--accent)" }}>Back to applications</Link></Empty></div>;
   const { app, summary } = data;
+  const probed = app.healthUrl ? new URL(app.healthUrl, app.url).toString() : app.url;
 
   return (
     <div className="stack">
@@ -44,6 +45,7 @@ export default function AppDetail() {
             <button className="btn" disabled={checking} onClick={async () => { setChecking(true); await api(`/apps/${id}/check`, { method: "POST" }).catch(() => {}); await reload(); setChecking(false); }}>
               <IconRefresh className={checking ? "spin" : ""} />Check now
             </button>
+            <Link href={`/studio?${new URLSearchParams({ url: probed, name: app.name, ...(app.insecureTls ? { insecure: "1" } : {}) })}`} className="btn">API Studio</Link>
             <Link href={`/apps/${id}/edit`} className="btn">Edit</Link>
             <ConfirmButton className="btn danger" ariaLabel="Delete" confirmLabel="Delete app + history?" onConfirm={async () => { await api(`/apps/${id}`, { method: "DELETE" }); router.replace("/apps"); }}><IconTrash /></ConfirmButton>
           </div>
@@ -52,7 +54,7 @@ export default function AppDetail() {
         <div className="row between small muted" style={{ marginTop: 6 }}><span>Last 30 checks</span><span>Updated {ago(app.lastCheckedAt)}</span></div>
       </div>
 
-      <div className="row between wrap"><span className="muted small">{app.method} · expects {app.expectedStatus} · timeout {app.timeoutMs / 1000}s{app.insecureTls && " · self-signed TLS allowed"}{app.server && <> · hosted on <Link href={`/servers/${app.server.id}`} style={{ color: "var(--accent)" }}>{app.server.name}</Link></>}</span><RangeTabs value={range} onChange={setRange} /></div>
+      <div className="row between wrap"><span className="muted small">Checks <span className="mono">{probed}</span> · {app.method} · expects {app.expectedStatus} · timeout {app.timeoutMs / 1000}s{app.insecureTls && " · self-signed TLS allowed"}{app.server && <> · hosted on <Link href={`/servers/${app.server.id}`} style={{ color: "var(--accent)" }}>{app.server.name}</Link></>}</span><RangeTabs value={range} onChange={setRange} /></div>
 
       <div className="grid stats">
         <Stat i={1} label="Uptime" icon={<IconPulse />} value={summary.uptime} unit="%" decimals={2} sub={`${summary.checks} checks`} />

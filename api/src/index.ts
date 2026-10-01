@@ -7,9 +7,11 @@ import { authRouter } from "./routes/auth";
 import { appsRouter } from "./routes/apps";
 import { serversRouter } from "./routes/servers";
 import { overviewRouter } from "./routes/overview";
+import { studioRouter } from "./routes/studio";
 
 const app = express();
 app.set("trust proxy", true);
+app.use("/studio", cookieParser(), studioRouter);
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 

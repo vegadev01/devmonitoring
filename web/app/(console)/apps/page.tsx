@@ -41,17 +41,17 @@ export default function AppsPage() {
           {list.map((a, i) => (
             <Link href={`/apps/${a.id}`} key={a.id} className="card app-card reveal" style={{ "--i": Math.min(i, 12) } as React.CSSProperties}>
               <div className="top">
-                <div className="truncate">
-                  <h3 className="truncate">{a.name}</h3>
-                  <div className="muted small truncate row" style={{ gap: 5 }}>{a.url.replace(/^https?:\/\//, "")}<IconExternal style={{ width: 12, flex: "none" }} /></div>
+                <div className="app-id">
+                  <h3 title={a.name}>{a.name}</h3>
+                  <div className="muted small app-url" title={a.url}><span>{a.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span><IconExternal style={{ width: 12, flex: "none" }} /></div>
                 </div>
                 <StatusPill status={a.enabled ? a.status : "unknown"} />
               </div>
-              <div className="row" style={{ gap: 8 }}><span className="tag">{a.environment}</span><span className="tag">{a.kind}</span>{a.server && <span className="tag" style={{ background: "var(--slate-100)", color: "var(--muted)" }}>{a.server.name}</span>}</div>
-              <div className="meta">
-                <span>Uptime <b>{pct(a.uptime24h, 2)}</b></span>
-                <span>Latency <b>{ms(a.lastLatencyMs)}</b></span>
-                <span>Checked <b>{ago(a.lastCheckedAt)}</b></span>
+              <div className="row wrap" style={{ gap: 8 }}><span className="tag">{a.environment}</span><span className="tag">{a.kind}</span>{a.server && <span className="tag" style={{ background: "var(--slate-100)", color: "var(--muted)" }}>{a.server.name}</span>}</div>
+              <div className="kpis">
+                <span>Uptime<b>{pct(a.uptime24h, 2)}</b></span>
+                <span>Latency<b>{ms(a.lastLatencyMs)}</b></span>
+                <span>Checked<b>{ago(a.lastCheckedAt)}</b></span>
               </div>
             </Link>
           ))}

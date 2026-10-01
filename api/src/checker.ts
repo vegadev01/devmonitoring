@@ -1,57 +1,32 @@
 import cron from "node-cron";
-import http from "node:http";
-import https from "node:https";
 import type { App } from "@prisma/client";
 import { prisma } from "./db";
 import { config } from "./config";
 import { sendAlert } from "./mailer";
+import { describeError, send } from "./httpclient";
 
-// Used only for apps flagged insecureTls: fetch() can't skip certificate verification per request.
-function probeInsecure(app: App, url = app.url, hops = 0): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const req = (u.protocol === "https:" ? https : http).request(
-      u,
-      { method: app.method, rejectUnauthorized: false, headers: { "User-Agent": "VeganextDevMonitor/1.0" } },
-      (res) => {
-        res.resume();
-        const loc = res.headers.location;
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc && hops < 5) {
-          resolve(probeInsecure(app, new URL(loc, u).toString(), hops + 1));
-        } else resolve(res.statusCode ?? 0);
-      }
-    );
-    req.setTimeout(app.timeoutMs, () => req.destroy(Object.assign(new Error(`Timed out after ${app.timeoutMs}ms`), { name: "TimeoutError" })));
-    req.on("error", reject);
-    req.end();
-  });
+export type ProbeTarget = Pick<App, "url" | "healthUrl" | "method" | "expectedStatus" | "timeoutMs" | "insecureTls">;
+
+/** The URL that is actually probed: the health endpoint if set (absolute, or a path relative to the app URL). */
+export function checkUrl(t: Pick<App, "url" | "healthUrl">) {
+  return t.healthUrl ? new URL(t.healthUrl, t.url).toString() : t.url;
+}
+
+/** Runs one health probe without touching the database. */
+export async function probe(t: ProbeTarget) {
+  const target = checkUrl(t);
+  const started = Date.now();
+  try {
+    const res = await send({ method: t.method, url: target, insecureTls: t.insecureTls, timeoutMs: t.timeoutMs });
+    const ok = res.status === t.expectedStatus || (t.expectedStatus === 200 && res.status < 400);
+    return { ok, statusCode: res.status, latencyMs: res.timeMs, error: ok ? null : `Expected ${t.expectedStatus}, got ${res.status}`, url: target };
+  } catch (e) {
+    return { ok: false, statusCode: null, latencyMs: Date.now() - started, error: describeError(e), url: target };
+  }
 }
 
 export async function runCheck(app: App) {
-  const started = Date.now();
-  let ok = false;
-  let statusCode: number | null = null;
-  let error: string | null = null;
-  try {
-    if (app.insecureTls) {
-      statusCode = await probeInsecure(app);
-    } else {
-      const res = await fetch(app.url, {
-        method: app.method,
-        redirect: "follow",
-        signal: AbortSignal.timeout(app.timeoutMs),
-        headers: { "User-Agent": "VeganextDevMonitor/1.0" },
-      });
-      statusCode = res.status;
-      await res.body?.cancel().catch(() => {});
-    }
-    ok = statusCode === app.expectedStatus || (app.expectedStatus === 200 && statusCode < 400);
-    if (!ok) error = `Expected ${app.expectedStatus}, got ${statusCode}`;
-  } catch (e) {
-    const err = e as Error;
-    error = err.name === "TimeoutError" ? `Timed out after ${app.timeoutMs}ms` : err.cause ? String((err.cause as Error).message ?? err.message) : err.message;
-  }
-  const latencyMs = Date.now() - started;
+  const { ok, statusCode, latencyMs, error } = await probe(app);
 
   await prisma.check.create({ data: { appId: app.id, ok, statusCode, latencyMs, error } });
   const newStatus = ok ? "up" : "down";
@@ -66,7 +41,7 @@ export async function runCheck(app: App) {
     const last2 = await prisma.check.findMany({ where: { appId: app.id }, orderBy: { createdAt: "desc" }, take: 2 });
     if (last2.length === 2 && last2.every((c) => !c.ok)) {
       await prisma.incident.create({ data: { kind: "app", appId: app.id, reason: error ?? "Check failed" } });
-      await sendAlert(`🔴 ${app.name} is DOWN`, `${app.name} (${app.url}) is failing.\nReason: ${error}\n\n${config.publicWebUrl}/apps/${app.id}`);
+      await sendAlert(`🔴 ${app.name} is DOWN`, `${app.name} (${checkUrl(app)}) is failing.\nReason: ${error}\n\n${config.publicWebUrl}/apps/${app.id}`);
     }
   } else if (ok && open) {
     await prisma.incident.update({ where: { id: open.id }, data: { resolvedAt: new Date() } });

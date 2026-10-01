@@ -10,12 +10,13 @@ export type App = {
   server: { id: string; name: string } | null;
 };
 type ServerLite = { id: string; name: string };
+type Ping = { ok: boolean; statusCode: number | null; latencyMs: number | null; error: string | null; url: string };
 
-export function AppForm({ initial, cancelHref }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number; insecureTls?: boolean }; cancelHref: string }) {
+export function AppForm({ initial, cancelHref }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number; insecureTls?: boolean; healthUrl?: string | null }; cancelHref: string }) {
   const router = useRouter();
   const { data: servers } = useApi<ServerLite[]>("/servers", 0);
   const [f, setF] = useState({
-    name: initial?.name ?? "", url: initial?.url ?? "https://", description: initial?.description ?? "",
+    name: initial?.name ?? "", url: initial?.url ?? "https://", healthUrl: initial?.healthUrl ?? "", description: initial?.description ?? "",
     kind: initial?.kind ?? "web", environment: initial?.environment ?? "production",
     method: initial?.method ?? "GET", expectedStatus: initial?.expectedStatus ?? 200, timeoutMs: initial?.timeoutMs ?? 10000,
     serverId: initial?.server?.id ?? "",
@@ -23,7 +24,20 @@ export function AppForm({ initial, cancelHref }: { initial?: Partial<App> & { ex
   });
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
+  const [ping, setPing] = useState<Ping | "loading" | null>(null);
+  const set = (k: string, v: unknown) => {
+    setF((p) => ({ ...p, [k]: v }));
+    if (["url", "healthUrl", "method", "expectedStatus", "timeoutMs", "insecureTls"].includes(k)) setPing(null);
+  };
+
+  async function runPing() {
+    setPing("loading");
+    try {
+      setPing(await api<Ping>("/apps/test", { method: "POST", json: f }));
+    } catch (e) {
+      setPing({ ok: false, statusCode: null, latencyMs: null, error: (e as Error).message, url: "" });
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,7 +60,26 @@ export function AppForm({ initial, cancelHref }: { initial?: Partial<App> & { ex
         <label className="field">Environment
           <select className="input" value={f.environment} onChange={(e) => set("environment", e.target.value)}><option value="production">Production</option><option value="staging">Staging</option><option value="dev">Development</option></select>
         </label>
-        <label className="field full">Health-check URL<input className="input" type="url" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://app.veganext.com/health" required /></label>
+        <label className="field full">App URL<input className="input" type="url" value={f.url} onChange={(e) => set("url", e.target.value)} placeholder="https://chado.vegax.ai" required />
+          <span className="hint">The address people open. Shown on the dashboard.</span>
+        </label>
+        <div className="field full">
+          <label htmlFor="healthUrl">Health-check endpoint <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+          <div className="row" style={{ gap: 8 }}>
+            <input id="healthUrl" className="input" value={f.healthUrl} onChange={(e) => set("healthUrl", e.target.value)} placeholder="/health   or   https://api.chado.vegax.ai/health" />
+            <button type="button" className="btn" onClick={runPing} disabled={ping === "loading" || !f.url}>{ping === "loading" ? "Pinging…" : "Ping"}</button>
+          </div>
+          <span className="hint">The URL DevMonitor probes. A path like <code>/health</code> is added to the App URL. Leave empty to check the App URL itself.</span>
+          {ping && ping !== "loading" && (
+            <div className={`ping-result ${ping.ok ? "ok" : "bad"}`} role="status">
+              <b>{ping.ok ? "Healthy" : "Unhealthy"}</b>
+              {ping.statusCode != null && <span>HTTP {ping.statusCode}</span>}
+              {ping.latencyMs != null && <span>{ping.latencyMs} ms</span>}
+              {ping.error && <span>{ping.error}</span>}
+              {ping.url && <span className="mono truncate">{ping.url}</span>}
+            </div>
+          )}
+        </div>
         <label className="field">Type
           <select className="input" value={f.kind} onChange={(e) => set("kind", e.target.value)}><option value="web">Web app</option><option value="api">API</option><option value="service">Service</option></select>
         </label>

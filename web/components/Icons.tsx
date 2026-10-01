@@ -24,3 +24,4 @@ export const IconSearch = mk(<><circle cx="11" cy="11" r="7" /><path d="M20 20l-
 export const IconTrash = mk(<><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>);
 export const IconShield = mk(<><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z" /><path d="M9 12l2 2 4-4" /></>);
 export const IconArrowLeft = mk(<path d="M19 12H5M11 18l-6-6 6-6" />);
+export const IconSidebar = mk(<><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /><path d="M14 10l2 2-2 2" /></>);
