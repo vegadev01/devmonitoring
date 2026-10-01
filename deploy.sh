@@ -32,7 +32,7 @@ if [ ${#problems[@]} -gt 0 ]; then
 fi
 
 SITE="${PUBLIC_WEB_URL%/}"
-HOST="${SITE#*://}"
+HOST="${SITE#*://}"; HOST="${HOST%%:*}"   # strip scheme and :port
 if [[ "$HOST" =~ ^[0-9.]+$ ]]; then
   say "IP mode: serving plain HTTP on $SITE (no DNS / no certificate)"
 else
@@ -47,8 +47,8 @@ else
 fi
 
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-  say "Opening firewall ports 80/443"
-  ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null
+  say "Opening firewall ports ${HTTP_PORT:-80}/443"
+  ufw allow "${HTTP_PORT:-80}"/tcp >/dev/null; ufw allow 443/tcp >/dev/null
 fi
 
 if [ -d .git ]; then

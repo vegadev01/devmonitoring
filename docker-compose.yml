@@ -42,7 +42,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-devmonitor.veganext.com}
     ports:
-      - "80:80"
+      - "${HTTP_PORT:-80}:${HTTP_PORT:-80}" # 80 normally; e.g. 8080 in IP mode
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
