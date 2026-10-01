@@ -1,4 +1,5 @@
-# Automatic HTTPS (Let's Encrypt). DNS for devmonitor.veganext.com must point at this host.
+# DOMAIN=devmonitor.veganext.com -> automatic HTTPS (DNS must point here).
+# DOMAIN=http://172.236.240.167   -> plain HTTP on the IP, no certificate.
 {$DOMAIN:devmonitor.veganext.com} {
 	encode zstd gzip
 	reverse_proxy web:3000

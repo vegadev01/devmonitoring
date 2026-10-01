@@ -25,20 +25,25 @@ problems=()
 [ "${POSTGRES_PASSWORD:-change-me}" = "change-me" ] && problems+=("POSTGRES_PASSWORD is still the default")
 [ "${SESSION_SECRET:-change-me-too}" = "change-me-too" ] && problems+=("SESSION_SECRET is still the default")
 [ -z "${ADMIN_PASSWORD_HASH:-}" ] && problems+=("ADMIN_PASSWORD_HASH is empty (node api/scripts/hash-password.js \"pw\")")
-case "${PUBLIC_WEB_URL:-}" in https://*) ;; *) problems+=("PUBLIC_WEB_URL should start with https://");; esac
+case "${PUBLIC_WEB_URL:-}" in http://*|https://*) ;; *) problems+=("PUBLIC_WEB_URL must start with http:// or https://");; esac
 if [ ${#problems[@]} -gt 0 ]; then
   printf ' - %s\n' "${problems[@]}" >&2
   die "Fix .env and re-run."
 fi
 
-DOMAIN="${DOMAIN:-devmonitor.veganext.com}"
-say "Checking DNS for $DOMAIN"
-MYIP="$(curl -fsS4 https://api.ipify.org || true)"
-DNSIP="$(getent ahostsv4 "$DOMAIN" | awk 'NR==1{print $1}' || true)"
-echo "server public IP: ${MYIP:-unknown}   DNS resolves to: ${DNSIP:-nothing}"
-if [ -n "$MYIP" ] && [ "$MYIP" != "$DNSIP" ]; then
-  echo "WARNING: DNS does not point at this server yet. HTTPS certificate issuance will fail until it does." >&2
-  read -r -p "Continue anyway? [y/N] " a; [ "${a:-n}" = "y" ] || exit 1
+SITE="${PUBLIC_WEB_URL%/}"
+HOST="${SITE#*://}"
+if [[ "$HOST" =~ ^[0-9.]+$ ]]; then
+  say "IP mode: serving plain HTTP on $SITE (no DNS / no certificate)"
+else
+  say "Checking DNS for $HOST"
+  MYIP="$(curl -fsS4 https://api.ipify.org || true)"
+  DNSIP="$(getent ahostsv4 "$HOST" | awk 'NR==1{print $1}' || true)"
+  echo "server public IP: ${MYIP:-unknown}   DNS resolves to: ${DNSIP:-nothing}"
+  if [ -n "$MYIP" ] && [ "$MYIP" != "$DNSIP" ]; then
+    echo "WARNING: DNS does not point at this server yet. HTTPS certificate issuance will fail until it does." >&2
+    read -r -p "Continue anyway? [y/N] " a; [ "${a:-n}" = "y" ] || exit 1
+  fi
 fi
 
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
@@ -62,12 +67,12 @@ for i in $(seq 1 40); do
 done
 [ "${ok:-0}" = 1 ] || { docker compose logs --tail 40 api; die "API did not become healthy"; }
 
-say "Waiting for HTTPS (certificate issuance can take ~30s on first run)"
+say "Waiting for $SITE (first HTTPS certificate can take ~30s)"
 for i in $(seq 1 30); do
-  if curl -fsS "https://$DOMAIN/api/health" 2>/dev/null | grep -q '"ok":true'; then
-    printf '\n\033[1;32mLive: https://%s\033[0m\n' "$DOMAIN"; docker compose ps; exit 0
+  if curl -fsS "$SITE/api/health" 2>/dev/null | grep -q '"ok":true'; then
+    printf '\n\033[1;32mLive: %s\033[0m\n' "$SITE"; docker compose ps; exit 0
   fi
   sleep 4
 done
 docker compose logs --tail 30 caddy
-die "Containers are up but https://$DOMAIN is not answering yet — check the Caddy log above (usually DNS or ports 80/443)."
+die "Containers are up but $SITE is not answering yet — check the Caddy log above (usually DNS or ports 80/443)."
