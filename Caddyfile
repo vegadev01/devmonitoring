@@ -1,5 +1,5 @@
 # DOMAIN=devmonitor.veganext.com -> automatic HTTPS (DNS must point here).
-# DOMAIN=http://172.236.240.167:8080 (+ HTTP_PORT=8080) -> plain HTTP on the IP, no certificate.
+# DOMAIN=:8080 (+ HTTP_PORT=8080) -> plain HTTP on any address/IP, no certificate.
 {$DOMAIN:devmonitor.veganext.com} {
 	encode zstd gzip
 	reverse_proxy web:3000

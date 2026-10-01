@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { IconX, IconCheck } from "./Icons";
+import Link from "next/link";
+import { IconArrowLeft, IconCheck } from "./Icons";
 import type { Status } from "@/lib/format";
 
 export function StatusPill({ status }: { status: Status | string }) {
@@ -47,30 +48,41 @@ export function Stat({ label, icon, value, unit, decimals = 0, sub, i = 0 }: {
   );
 }
 
-export function Modal({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+/** Back link + page title used by the dedicated form pages. */
+export function PageHeader({ back, backLabel, title, subtitle }: { back: string; backLabel: string; title: string; subtitle?: string }) {
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="row between" style={{ marginBottom: 18, alignItems: "flex-start" }}>
-          <div>
-            <h2>{title}</h2>
-            {subtitle && <p className="muted small">{subtitle}</p>}
-          </div>
-          <button className="btn ghost" onClick={onClose} aria-label="Close"><IconX /></button>
-        </div>
-        {children}
-      </div>
+    <div className="page-head reveal">
+      <Link href={back} className="back-link"><IconArrowLeft />{backLabel}</Link>
+      <h1>{title}</h1>
+      {subtitle && <p className="muted">{subtitle}</p>}
     </div>
+  );
+}
+
+/** Two-step inline confirmation instead of a browser confirm() pop-up. */
+export function ConfirmButton({ onConfirm, children, confirmLabel = "Click again to confirm", className = "btn", ariaLabel }: {
+  onConfirm: () => Promise<unknown> | void; children: ReactNode; confirmLabel?: string; className?: string; ariaLabel?: string;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      className={`${className} ${armed ? "armed" : ""}`}
+      aria-label={armed ? confirmLabel : ariaLabel}
+      disabled={busy}
+      onClick={async () => {
+        if (!armed) return setArmed(true);
+        setBusy(true);
+        try { await onConfirm(); } finally { setBusy(false); setArmed(false); }
+      }}
+    >
+      {armed ? confirmLabel : children}
+    </button>
   );
 }
 

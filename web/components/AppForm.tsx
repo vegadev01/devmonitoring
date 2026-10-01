@@ -1,7 +1,8 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, useApi } from "@/lib/api";
-import { Modal } from "@/components/ui";
 
 export type App = {
   id: string; name: string; description: string | null; url: string; kind: string; environment: string; status: string;
@@ -10,7 +11,8 @@ export type App = {
 };
 type ServerLite = { id: string; name: string };
 
-export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number; insecureTls?: boolean }; onDone: () => void; onClose: () => void }) {
+export function AppForm({ initial, cancelHref }: { initial?: Partial<App> & { expectedStatus?: number; method?: string; timeoutMs?: number; insecureTls?: boolean }; cancelHref: string }) {
+  const router = useRouter();
   const { data: servers } = useApi<ServerLite[]>("/servers", 0);
   const [f, setF] = useState({
     name: initial?.name ?? "", url: initial?.url ?? "https://", description: initial?.description ?? "",
@@ -28,9 +30,10 @@ export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> &
     setBusy(true);
     setErr("");
     try {
-      if (initial?.id) await api(`/apps/${initial.id}`, { method: "PATCH", json: f });
-      else await api("/apps", { method: "POST", json: f });
-      onDone();
+      const saved = initial?.id
+        ? await api<{ id: string }>(`/apps/${initial.id}`, { method: "PATCH", json: f })
+        : await api<{ id: string }>("/apps", { method: "POST", json: f });
+      router.push(`/apps/${saved.id}`);
     } catch (e) {
       setErr((e as Error).message);
       setBusy(false);
@@ -38,8 +41,7 @@ export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> &
   }
 
   return (
-    <Modal title={initial?.id ? "Edit application" : "Add application"} subtitle="DevMonitor will probe this URL on every check cycle." onClose={onClose}>
-      <form onSubmit={submit} className="form-grid">
+    <form onSubmit={submit} className="card form-card form-grid reveal" style={{ "--i": 1 } as React.CSSProperties}>
         <label className="field">Name<input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Client Portal" required autoFocus /></label>
         <label className="field">Environment
           <select className="input" value={f.environment} onChange={(e) => set("environment", e.target.value)}><option value="production">Production</option><option value="staging">Staging</option><option value="dev">Development</option></select>
@@ -60,11 +62,10 @@ export function AppForm({ initial, onDone, onClose }: { initial?: Partial<App> &
         <label className="field full">Description<input className="input" value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Optional" /></label>
         {err && <div className="alert full">{err}</div>}
         <div className="row full" style={{ justifyContent: "flex-end" }}>
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+          <Link href={cancelHref} className="btn ghost">Cancel</Link>
           <button className="btn primary" disabled={busy}>{busy ? "Saving…" : initial?.id ? "Save changes" : "Add application"}</button>
         </div>
-      </form>
-    </Modal>
+    </form>
   );
 }
 

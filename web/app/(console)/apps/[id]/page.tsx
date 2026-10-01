@@ -4,10 +4,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, useApi } from "@/lib/api";
 import { ago, duration, ms, pct, when } from "@/lib/format";
-import { RangeTabs, Skeleton, Stat, StatusPill, UptimeBar, Empty } from "@/components/ui";
+import { ConfirmButton, RangeTabs, Skeleton, Stat, StatusPill, UptimeBar, Empty } from "@/components/ui";
 import { Chart } from "@/components/Chart";
 import { IconBolt, IconCheck, IconClock, IconExternal, IconPulse, IconRefresh, IconShield, IconTrash } from "@/components/Icons";
-import { AppForm, type App } from "@/components/AppForm";
+import type { App } from "@/components/AppForm";
 
 type Detail = {
   app: App & { method: string; expectedStatus: number; timeoutMs: number; insecureTls: boolean };
@@ -23,7 +23,6 @@ export default function AppDetail() {
   const [range, setRange] = useState("24h");
   const { data, loading, reload } = useApi<Detail>(`/apps/${id}?range=${range}`, 20_000);
   const [checking, setChecking] = useState(false);
-  const [editing, setEditing] = useState(false);
 
   if (loading && !data) return <div className="stack"><div className="card"><Skeleton h={80} /></div><div className="card"><Skeleton h={240} /></div></div>;
   if (!data) return <div className="card"><Empty icon={<IconShield />} title="Application not found"><Link href="/apps" style={{ color: "var(--accent)" }}>Back to applications</Link></Empty></div>;
@@ -45,8 +44,8 @@ export default function AppDetail() {
             <button className="btn" disabled={checking} onClick={async () => { setChecking(true); await api(`/apps/${id}/check`, { method: "POST" }).catch(() => {}); await reload(); setChecking(false); }}>
               <IconRefresh className={checking ? "spin" : ""} />Check now
             </button>
-            <button className="btn" onClick={() => setEditing(true)}>Edit</button>
-            <button className="btn danger" aria-label="Delete" onClick={async () => { if (confirm(`Delete ${app.name} and all its history?`)) { await api(`/apps/${id}`, { method: "DELETE" }); router.replace("/apps"); } }}><IconTrash /></button>
+            <Link href={`/apps/${id}/edit`} className="btn">Edit</Link>
+            <ConfirmButton className="btn danger" ariaLabel="Delete" confirmLabel="Delete app + history?" onConfirm={async () => { await api(`/apps/${id}`, { method: "DELETE" }); router.replace("/apps"); }}><IconTrash /></ConfirmButton>
           </div>
         </div>
         <div style={{ marginTop: 18 }}><UptimeBar checks={[...data.recent].reverse()} /></div>
@@ -94,7 +93,6 @@ export default function AppDetail() {
           )}
         </div>
       </div>
-      {editing && <AppForm initial={app} onClose={() => setEditing(false)} onDone={() => { setEditing(false); reload(); }} />}
     </div>
   );
 }

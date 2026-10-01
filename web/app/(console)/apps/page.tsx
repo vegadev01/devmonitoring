@@ -4,14 +4,13 @@ import { useMemo, useState } from "react";
 import { useApi } from "@/lib/api";
 import { ms, pct, ago } from "@/lib/format";
 import { Empty, Skeleton, StatusPill } from "@/components/ui";
-import { AppForm, type App } from "@/components/AppForm";
+import type { App } from "@/components/AppForm";
 import { IconApps, IconExternal, IconPlus, IconSearch } from "@/components/Icons";
 
 export default function AppsPage() {
-  const { data, loading, reload } = useApi<App[]>("/apps", 20_000);
+  const { data, loading } = useApi<App[]>("/apps", 20_000);
   const [q, setQ] = useState("");
   const [env, setEnv] = useState("all");
-  const [adding, setAdding] = useState(false);
 
   const list = useMemo(
     () => (data ?? []).filter((a) => (env === "all" || a.environment === env) && `${a.name} ${a.url}`.toLowerCase().includes(q.toLowerCase())),
@@ -30,7 +29,7 @@ export default function AppsPage() {
             {["all", "production", "staging", "dev"].map((e) => <button key={e} className={env === e ? "on" : ""} onClick={() => setEnv(e)}>{e === "all" ? "All" : e[0].toUpperCase() + e.slice(1)}</button>)}
           </div>
         </div>
-        <button className="btn primary" onClick={() => setAdding(true)}><IconPlus />Add application</button>
+        <Link href="/apps/new" className="btn primary"><IconPlus />Add application</Link>
       </div>
 
       {loading && !data ? (
@@ -58,7 +57,6 @@ export default function AppsPage() {
           ))}
         </div>
       )}
-      {adding && <AppForm onClose={() => setAdding(false)} onDone={() => { setAdding(false); reload(); }} />}
     </div>
   );
 }

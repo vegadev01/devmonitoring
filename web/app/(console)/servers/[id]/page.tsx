@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, useApi } from "@/lib/api";
 import { ago, duration, pct, rate, when } from "@/lib/format";
-import { Empty, Gauge, RangeTabs, Skeleton, StatusPill } from "@/components/ui";
+import { ConfirmButton, Empty, Gauge, RangeTabs, Skeleton, StatusPill } from "@/components/ui";
 import { Chart, Legend } from "@/components/Chart";
 import { IconCheck, IconServer, IconShield, IconTrash } from "@/components/Icons";
 import type { Metric } from "../page";
@@ -51,8 +51,8 @@ export default function ServerDetail() {
             </div>
           </div>
           <div className="row wrap">
-            <button className="btn" onClick={async () => { if (confirm("Rotate the API key? The agent will stop reporting until reconfigured.")) { const r = await api<{ apiKey: string }>(`/servers/${id}/rotate-key`, { method: "POST" }); setKey(r.apiKey); } }}>Rotate key</button>
-            <button className="btn danger" aria-label="Delete" onClick={async () => { if (confirm(`Delete ${server.name} and its metrics?`)) { await api(`/servers/${id}`, { method: "DELETE" }); router.replace("/servers"); } }}><IconTrash /></button>
+            <ConfirmButton confirmLabel="Agent will need the new key — confirm?" onConfirm={async () => { const r = await api<{ apiKey: string }>(`/servers/${id}/rotate-key`, { method: "POST" }); setKey(r.apiKey); }}>Rotate key</ConfirmButton>
+            <ConfirmButton className="btn danger" ariaLabel="Delete" confirmLabel="Delete server + metrics?" onConfirm={async () => { await api(`/servers/${id}`, { method: "DELETE" }); router.replace("/servers"); }}><IconTrash /></ConfirmButton>
           </div>
         </div>
         {key && <div className="alert warn" style={{ marginTop: 14 }}>New API key (shown once): <span className="mono">{key}</span> — update <span className="mono">API_KEY</span> in /etc/systemd/system/monitoring-agent.service and restart it.</div>}
