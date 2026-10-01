@@ -1,0 +1,87 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A machine running the resource agent.
+model Server {
+  id           String     @id @default(cuid())
+  name         String
+  hostname     String?
+  apiKeyHash   String
+  lastSeenAt   DateTime?
+  createdAt    DateTime   @default(now())
+  metrics      Metric[]
+  apps         App[]
+  incidents    Incident[]
+}
+
+model Metric {
+  id         String   @id @default(cuid())
+  serverId   String
+  server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  cpuPct     Float?
+  ramPct     Float?
+  gpuPct     Float?
+  diskPct    Float?
+  netRxBytes Float?
+  netTxBytes Float?
+  createdAt  DateTime @default(now())
+
+  @@index([serverId, createdAt])
+}
+
+// A Veganext application / endpoint that is health-checked over HTTP.
+model App {
+  id             String     @id @default(cuid())
+  name           String
+  description    String?
+  url            String
+  kind           String     @default("web") // web | api | service
+  environment    String     @default("production") // production | staging | dev
+  method         String     @default("GET")
+  expectedStatus Int        @default(200)
+  timeoutMs      Int        @default(10000)
+  enabled        Boolean    @default(true)
+  serverId       String?
+  server         Server?    @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  status         String     @default("unknown") // up | down | unknown
+  lastCheckedAt  DateTime?
+  lastLatencyMs  Int?
+  createdAt      DateTime   @default(now())
+  checks         Check[]
+  incidents      Incident[]
+}
+
+model Check {
+  id         String   @id @default(cuid())
+  appId      String
+  app        App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  ok         Boolean
+  statusCode Int?
+  latencyMs  Int?
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@index([appId, createdAt])
+}
+
+model Incident {
+  id         String    @id @default(cuid())
+  kind       String // app | server
+  appId      String?
+  app        App?      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId   String?
+  server     Server?   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  reason     String
+  startedAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([startedAt])
+  @@index([resolvedAt])
+}
