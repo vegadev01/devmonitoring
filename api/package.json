@@ -16,7 +16,7 @@
     "express": "^4.22.3",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^10.0.15",
-    "prisma": "5.22.0"
+    "prisma": "7.10.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
