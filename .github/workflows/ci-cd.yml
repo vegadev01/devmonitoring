@@ -25,7 +25,7 @@ env:
 jobs:
   api:
     name: API · build, migrations, smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -83,7 +83,7 @@ jobs:
 
   web:
     name: Web · build and bundle budget
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -118,7 +118,7 @@ jobs:
 
   scripts:
     name: Scripts and config lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -137,7 +137,7 @@ jobs:
 
   docker:
     name: Docker image · ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -170,7 +170,7 @@ jobs:
 
   secrets-scan:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -184,7 +184,7 @@ jobs:
     needs: [api, web, scripts, docker, secrets-scan]
     # Pushes to main, or "Run workflow" on main from the Actions tab.
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:
       name: production

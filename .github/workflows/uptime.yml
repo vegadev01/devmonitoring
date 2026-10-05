@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       PROD_URL: ${{ vars.PROD_URL || 'http://172.236.240.167' }}

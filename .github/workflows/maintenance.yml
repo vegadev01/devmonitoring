@@ -12,7 +12,7 @@ permissions:
 jobs:
   dependencies:
     name: Dependencies (${{ matrix.app }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -48,7 +48,7 @@ jobs:
 
   trivy:
     name: Vulnerability and misconfiguration scan (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -61,7 +61,7 @@ jobs:
 
   server:
     name: Server health, backup and cleanup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
