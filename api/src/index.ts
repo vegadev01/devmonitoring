@@ -8,6 +8,8 @@ import { appsRouter } from "./routes/apps";
 import { serversRouter } from "./routes/servers";
 import { overviewRouter } from "./routes/overview";
 import { studioRouter } from "./routes/studio";
+import { notificationsRouter } from "./routes/notifications";
+import { verifyMail } from "./notify";
 
 const app = express();
 app.set("trust proxy", true);
@@ -21,6 +23,7 @@ app.use("/agent", express.static(path.join(__dirname, "../public/agent")));
 app.use("/auth", authRouter);
 app.use("/apps", appsRouter);
 app.use("/servers", serversRouter);
+app.use("/notifications", notificationsRouter);
 app.use("/", overviewRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -31,4 +34,5 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 app.listen(config.port, () => {
   console.log(`[api] listening on :${config.port}`);
   startChecker();
+  verifyMail();
 });

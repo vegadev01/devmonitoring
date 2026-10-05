@@ -2,7 +2,7 @@ import cron from "node-cron";
 import type { App } from "@prisma/client";
 import { prisma } from "./db";
 import { config } from "./config";
-import { sendAlert } from "./mailer";
+import { notify } from "./notify";
 import { describeError, send } from "./httpclient";
 
 export type ProbeTarget = Pick<App, "url" | "healthUrl" | "method" | "expectedStatus" | "timeoutMs" | "insecureTls">;
@@ -36,16 +36,45 @@ export async function runCheck(app: App) {
   });
 
   const open = await prisma.incident.findFirst({ where: { appId: app.id, resolvedAt: null } });
+  const service = { kind: "Application" as const, name: app.name, environment: app.environment, url: checkUrl(app) };
+  const link = `${config.publicWebUrl}/apps/${app.id}`;
   if (!ok && !open) {
     // Require two consecutive failures to avoid flapping on a single blip.
     const last2 = await prisma.check.findMany({ where: { appId: app.id }, orderBy: { createdAt: "desc" }, take: 2 });
     if (last2.length === 2 && last2.every((c) => !c.ok)) {
-      await prisma.incident.create({ data: { kind: "app", appId: app.id, reason: error ?? "Check failed" } });
-      await sendAlert(`🔴 ${app.name} is DOWN`, `${app.name} (${checkUrl(app)}) is failing.\nReason: ${error}\n\n${config.publicWebUrl}/apps/${app.id}`);
+      const incident = await prisma.incident.create({ data: { kind: "app", appId: app.id, reason: error ?? "Check failed" } });
+      notify({
+        type: "app_down",
+        service,
+        occurredAt: incident.startedAt,
+        error,
+        details: [
+          ["HTTP status", statusCode == null ? "No response" : String(statusCode)],
+          ["Expected", `HTTP ${app.expectedStatus} within ${app.timeoutMs / 1000}s`],
+          ["Failed checks", "2 consecutive"],
+          ["Response time", `${latencyMs} ms`],
+        ],
+        link,
+        incidentId: incident.id,
+      });
     }
   } else if (ok && open) {
-    await prisma.incident.update({ where: { id: open.id }, data: { resolvedAt: new Date() } });
-    await sendAlert(`🟢 ${app.name} recovered`, `${app.name} (${app.url}) is back up (${latencyMs}ms).\n\n${config.publicWebUrl}/apps/${app.id}`);
+    const resolvedAt = new Date();
+    await prisma.incident.update({ where: { id: open.id }, data: { resolvedAt } });
+    notify({
+      type: "app_recovered",
+      service,
+      occurredAt: resolvedAt,
+      details: [
+        ["Down since", open.startedAt],
+        ["Downtime", humanDuration(resolvedAt.getTime() - open.startedAt.getTime())],
+        ["Original error", open.reason],
+        ["HTTP status", String(statusCode)],
+        ["Response time", `${latencyMs} ms`],
+      ],
+      link,
+      incidentId: open.id,
+    });
   }
   return { ok, statusCode, latencyMs, error };
 }
@@ -56,14 +85,62 @@ async function checkServers() {
   for (const s of servers) {
     const stale = !s.lastSeenAt || now - s.lastSeenAt.getTime() > config.serverOfflineAfterMs;
     const open = await prisma.incident.findFirst({ where: { serverId: s.id, resolvedAt: null } });
+    const service = { kind: "Server" as const, name: s.name, ...(s.hostname ? { url: s.hostname } : {}) };
+    const link = `${config.publicWebUrl}/servers/${s.id}`;
     if (stale && s.lastSeenAt && !open) {
-      await prisma.incident.create({ data: { kind: "server", serverId: s.id, reason: "No metrics received from agent" } });
-      await sendAlert(`🔴 Server ${s.name} is offline`, `No metrics received since ${s.lastSeenAt.toISOString()}.\n\n${config.publicWebUrl}/servers/${s.id}`);
+      const incident = await prisma.incident.create({ data: { kind: "server", serverId: s.id, reason: "No metrics received from agent" } });
+      notify({
+        type: "server_offline",
+        service,
+        occurredAt: incident.startedAt,
+        error: `The monitoring agent has not reported for ${humanDuration(now - s.lastSeenAt.getTime())} (threshold ${humanDuration(config.serverOfflineAfterMs)}). The server may be down, unreachable, or the agent stopped.`,
+        details: [["Last report", s.lastSeenAt]],
+        link,
+        incidentId: incident.id,
+      });
     } else if (!stale && open) {
-      await prisma.incident.update({ where: { id: open.id }, data: { resolvedAt: new Date() } });
-      await sendAlert(`🟢 Server ${s.name} is back online`, `Agent is reporting again.\n\n${config.publicWebUrl}/servers/${s.id}`);
+      const resolvedAt = new Date();
+      await prisma.incident.update({ where: { id: open.id }, data: { resolvedAt } });
+      notify({
+        type: "server_recovered",
+        service,
+        occurredAt: resolvedAt,
+        details: [
+          ["Offline since", open.startedAt],
+          ["Offline for", humanDuration(resolvedAt.getTime() - open.startedAt.getTime())],
+        ],
+        link,
+        incidentId: open.id,
+      });
     }
   }
+}
+
+function humanDuration(ms: number) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}min`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+// A broken check loop is itself an issue; alert at most once an hour so a persistent fault doesn't spam.
+let lastSystemAlert = 0;
+function reportSystemError(e: unknown) {
+  const msg = (e as Error).message ?? String(e);
+  console.error("[checker] run failed:", msg);
+  if (Date.now() - lastSystemAlert < 3600_000) return;
+  lastSystemAlert = Date.now();
+  notify({
+    type: "system_error",
+    service: { kind: "System", name: "DevMonitor checker" },
+    occurredAt: new Date(),
+    error: msg,
+    details: [["Impact", "Health checks may not be running until this is fixed"]],
+    link: config.publicWebUrl,
+  });
 }
 
 let running = false;
@@ -75,7 +152,7 @@ export async function runAllChecks() {
     await Promise.allSettled(apps.map((a) => runCheck(a)));
     await checkServers();
   } catch (e) {
-    console.error("[checker] run failed:", (e as Error).message);
+    reportSystemError(e);
   } finally {
     running = false;
   }
@@ -91,6 +168,7 @@ export function startChecker() {
     const [c, m] = await Promise.all([
       prisma.check.deleteMany({ where: { createdAt: { lt: cutoff } } }),
       prisma.metric.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      prisma.notificationLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
     ]);
     console.log(`[retention] removed ${c.count} checks, ${m.count} metrics`);
   });

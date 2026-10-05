@@ -106,3 +106,29 @@ model SavedRequest {
 
   @@index([collection])
 }
+
+// Admins who receive an email for every issue (seeded with the Veganext admin list).
+model NotificationRecipient {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  timezone  String? // IANA zone chosen manually; null = automatic (Outlook setting, else ALERT_TIMEZONE)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// One row per email attempt per recipient, so delivery can be audited.
+model NotificationLog {
+  id         String   @id @default(cuid())
+  event      String // app_down | app_recovered | server_offline | server_recovered | system_error | test
+  subject    String
+  service    String
+  recipient  String
+  status     String // sent | failed | skipped
+  attempts   Int      @default(1)
+  error      String?
+  incidentId String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

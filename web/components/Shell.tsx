@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, useApi } from "@/lib/api";
-import { IconAlert, IconApps, IconBolt, IconHome, IconLogout, IconServer, IconSidebar } from "./Icons";
+import { IconAlert, IconApps, IconBell, IconBolt, IconHome, IconLogout, IconServer, IconSidebar } from "./Icons";
 
 const NAV = [
   { href: "/", label: "Overview", Icon: IconHome },
@@ -11,10 +11,11 @@ const NAV = [
   { href: "/servers", label: "Servers", Icon: IconServer },
   { href: "/incidents", label: "Incidents", Icon: IconAlert },
   { href: "/studio", label: "API Studio", Icon: IconBolt },
+  { href: "/notifications", label: "Notifications", Icon: IconBell },
 ];
 const COLLAPSE_KEY = "dm.sidebar.collapsed";
 
-const TITLES: Record<string, string> = { "/": "Overview", "/apps": "Applications", "/servers": "Servers", "/incidents": "Incidents", "/studio": "API Studio" };
+const TITLES: Record<string, string> = { "/": "Overview", "/apps": "Applications", "/servers": "Servers", "/incidents": "Incidents", "/studio": "API Studio", "/notifications": "Notifications" };
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();

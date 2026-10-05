@@ -413,3 +413,49 @@ kbd { font: 600 11px ui-monospace, Menlo, monospace; padding: 2px 6px; border-ra
   .save-row { grid-template-columns: 1fr; }
   .kv-row { grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) 32px; }
 }
+
+/* ---------- Notifications ---------- */
+.test-results { display: grid; gap: 8px; margin-top: 16px; }
+.add-recipient { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 8px; }
+.recipient .avatar { width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(135deg, var(--brand-400), var(--brand-800)); }
+.recipient.off .avatar { background: var(--slate-300); }
+.recipient.off b { color: var(--muted); }
+.switch { position: relative; width: 40px; height: 23px; flex: none; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--slate-300); transition: background .25s var(--ease); pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .3s var(--ease); }
+.switch input:checked + span { background: var(--ok); }
+.switch input:checked + span::after { transform: translateX(17px); }
+.switch input:focus-visible + span { outline: 2px solid var(--brand-400); outline-offset: 2px; }
+.table-wrap { overflow-x: auto; margin: 0 -4px; }
+.log-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.log-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.log-table td { padding: 11px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.log-table tr:last-child td { border-bottom: 0; }
+.log-table .nowrap { white-space: nowrap; }
+.truncate-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-err { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-text { font-weight: 650; }
+.status-text.sent { color: var(--ok); } .status-text.failed { color: var(--bad); } .status-text.skipped { color: var(--warn); }
+@media (max-width: 640px) { .add-recipient { grid-template-columns: 1fr; } }
+.delivery summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.delivery summary::-webkit-details-marker { display: none; }
+.delivery summary::after { content: "▾"; color: var(--muted); font-size: 11px; transition: transform .2s var(--ease); }
+.delivery[open] summary::after { transform: rotate(180deg); }
+.delivery ul { list-style: none; padding: 8px 0 2px; margin: 0; display: grid; gap: 5px; font-size: 13px; }
+.delivery li { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.test-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.test-form .input { width: 250px; }
+.tz-select { margin-top: 3px; max-width: 100%; border: 0; background: transparent; color: var(--muted); font-size: 12.5px; padding: 2px 0; cursor: pointer; text-overflow: ellipsis; }
+.tz-select:hover, .tz-select:focus { color: var(--accent); outline: none; }
+@media (max-width: 640px) { .test-form, .test-form .input { width: 100%; } }
+
+/* ---------- Servers toolbar ---------- */
+.seg-count { margin-left: 6px; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.seg button.on .seg-count { background: var(--accent-soft); color: var(--accent); }
+.sort-ctl { display: flex; align-items: center; gap: 8px; }
+.sort-ctl select.input { width: auto; padding: 8px 12px; }
+.dir-btn { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+.gauge-focus { border-radius: 14px; background: var(--accent-soft); padding: 4px 0; transition: background .3s var(--ease); }
+.gauge-focus .gauge { color: var(--accent); font-weight: 650; }
+.gauges > div { display: grid; justify-items: center; }
