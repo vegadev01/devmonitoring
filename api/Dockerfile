@@ -1,5 +1,5 @@
 # Build context is the repo root (see docker-compose.yml)
-FROM node:20-alpine
+FROM node:26-alpine
 # Prisma's query engine needs OpenSSL, which isn't in the base alpine image.
 RUN apk add --no-cache openssl
 WORKDIR /app
