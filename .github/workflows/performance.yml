@@ -1,0 +1,70 @@
+name: Performance
+
+# Load test + Lighthouse audit of production: after every successful deploy, daily, or on demand.
+on:
+  workflow_run:
+    workflows: ["CI/CD"]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance
+  cancel-in-progress: false
+
+env:
+  PROD_URL: ${{ vars.PROD_URL || 'http://172.236.240.167' }}
+
+jobs:
+  load-test:
+    name: k6 load test
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run k6 (10 virtual users, ~70s)
+        run: |
+          docker run --rm --network host -u "$(id -u)" -v "$PWD:/w" -w /w grafana/k6:latest \
+            run -e BASE_URL="$PROD_URL" .github/perf/smoke.js
+      - name: Summary
+        if: always()
+        run: cat k6-summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+  lighthouse:
+    name: Lighthouse (login page)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Audit
+        id: lh
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: ${{ env.PROD_URL }}/login
+          configPath: .github/lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: false
+      - name: Scores
+        if: always()
+        env:
+          RESULTS: ${{ steps.lh.outputs.resultsPath }}
+        run: |
+          # shellcheck disable=SC2016 # single quotes on purpose: JavaScript template literals
+          node -e '
+            const fs = require("fs"), f = `${process.env.RESULTS}/manifest.json`;
+            const runs = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : [];
+            const rep = runs.find((r) => r.isRepresentativeRun) || runs[0];
+            if (!rep) { console.log("No Lighthouse results"); process.exit(0); }
+            const s = rep.summary, pct = (v) => Math.round(v * 100);
+            const icon = (v) => (v >= 0.9 ? "🟢" : v >= 0.5 ? "🟠" : "🔴");
+            console.log(`### Lighthouse — ${rep.url}\n\n| Category | Score |\n|---|---|`);
+            for (const k of ["performance", "accessibility", "best-practices", "seo"]) if (s[k] != null) console.log(`| ${k} | ${icon(s[k])} ${pct(s[k])} |`);
+            console.log("\nFull HTML report: see the lighthouse-results artifact on this run.");
+          ' >> "$GITHUB_STEP_SUMMARY"

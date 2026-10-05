@@ -1,0 +1,246 @@
+name: CI/CD
+
+# Every push and pull request is built and tested. Pushes to main that pass everything are
+# deployed to production automatically (with health checks and automatic rollback).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "20"
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Web bundle budget (gzipped JS in .next/static/chunks). Warn above, fail above max.
+  BUNDLE_WARN_KB: "280"
+  BUNDLE_MAX_KB: "350"
+
+jobs:
+  api:
+    name: API · build, migrations, smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Validate Prisma schema
+        run: npx prisma validate && npx prisma generate
+      - name: Type-check and compile
+        run: npm run build
+      - name: Apply all migrations to a fresh database
+        run: npx prisma migrate deploy
+      - name: Migrations match the schema (no drift)
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+      - name: Boot smoke test
+        env:
+          PORT: "4010"
+          SESSION_SECRET: ci-only
+          ADMIN_PASSWORD_HASH: "" # login disabled; only booting is tested
+          CHECK_INTERVAL_MS: "60000"
+        run: |
+          node dist/index.js > api.log 2>&1 &
+          for _ in $(seq 1 30); do curl -fsS localhost:4010/health >/dev/null 2>&1 && break; sleep 1; done
+          echo "health: $(curl -sS localhost:4010/health)"
+          curl -fsS localhost:4010/health | grep -q '"ok":true'
+          # Protected routes must reject anonymous requests.
+          for path in /overview /apps /servers /notifications /studio/requests; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "localhost:4010$path")
+            [ "$code" = 401 ] || { echo "::error::$path returned $code without a session (expected 401)"; exit 1; }
+          done
+          echo "Anonymous access correctly rejected on protected routes"
+      - name: API log
+        if: always()
+        run: cat api.log 2>/dev/null || true
+      - name: Dependency audit (production, high+)
+        run: npm audit --omit=dev --audit-level=high
+
+  web:
+    name: Web · build and bundle budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build (includes type-check)
+        run: npm run build
+      - name: Bundle size budget
+        run: |
+          raw=0; gz=0; rows=""
+          while read -r f; do
+            r=$(stat -c %s "$f"); g=$(gzip -9 -c "$f" | wc -c)
+            raw=$((raw + r)); gz=$((gz + g)); rows+="$g $r ${f#.next/static/chunks/}"$'\n'
+          done < <(find .next/static/chunks -name '*.js')
+          gzkb=$((gz / 1024))
+          {
+            echo "### Web bundle: ${gzkb} KB gzipped ($((raw / 1024)) KB raw) — budget ${BUNDLE_WARN_KB} KB warn / ${BUNDLE_MAX_KB} KB max"
+            echo; echo "| Largest chunks | gzip | raw |"; echo "|---|---|---|"
+            printf '%s' "$rows" | sort -rn | head -5 | awk '{printf "| %s | %d KB | %d KB |\n", $3, $1/1024, $2/1024}'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$gzkb" -gt "$BUNDLE_MAX_KB" ]; then echo "::error::Bundle ${gzkb} KB exceeds the ${BUNDLE_MAX_KB} KB budget"; exit 1; fi
+          if [ "$gzkb" -gt "$BUNDLE_WARN_KB" ]; then echo "::warning::Bundle ${gzkb} KB is above the ${BUNDLE_WARN_KB} KB warning level"; fi
+      - name: Dependency audit (production, high+)
+        run: npm audit --omit=dev --audit-level=high
+
+  scripts:
+    name: Scripts and config lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: ShellCheck
+        run: shellcheck -S warning deploy.sh agent/install.sh .github/scripts/*.sh
+      - name: Agent syntax
+        run: node --check agent/monitor-agent.js
+      - name: docker-compose.yml is valid
+        run: cp .env.example .env && docker compose config -q
+      - name: Caddyfile is valid
+        run: |
+          for d in devmonitor.veganext.com :80 :8080; do
+            docker run --rm -e DOMAIN="$d" -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile >/dev/null
+            echo "Caddyfile OK with DOMAIN=$d"
+          done
+
+  docker:
+    name: Docker image · ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            file: api/Dockerfile
+          - name: web
+            context: web
+            file: web/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          tags: devmonitor-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Image runs as non-root
+        run: |
+          user=$(docker run --rm --entrypoint id devmonitor-${{ matrix.name }}:ci -un)
+          echo "runs as: $user"; [ "$user" != "root" ]
+          echo "### ${{ matrix.name }} image: $(docker image inspect devmonitor-${{ matrix.name }}:ci --format '{{.Size}}' | awk '{printf "%d MB", $1/1048576}'), user \`$user\`" >> "$GITHUB_STEP_SUMMARY"
+
+  secrets-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest git /repo --redact --no-banner --verbose
+
+  deploy:
+    name: Deploy to production
+    needs: [api, web, scripts, docker, secrets-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.PROD_URL || 'http://172.236.240.167' }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      PROD_URL: ${{ vars.PROD_URL || 'http://172.236.240.167' }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/devmonitor' }}
+    steps:
+      - name: Check deploy configuration
+        id: cfg
+        env:
+          HAS_KEY: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_KNOWN_HOSTS != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::warning::Auto-deploy skipped: add the SSH_HOST, SSH_USER, SSH_PRIVATE_KEY and SSH_KNOWN_HOSTS secrets (see README → Continuous deployment)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ready == 'true'
+      - name: Set up SSH
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Deploy ${{ github.sha }} (rolls back automatically on failure)
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 \
+            "$SSH_USER@$SSH_HOST" "DEPLOY_PATH='$DEPLOY_PATH' SHA='$GITHUB_SHA' bash -s" < .github/scripts/remote-deploy.sh
+      - name: Verify from the internet
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          for _ in $(seq 1 10); do
+            body=$(curl -fsS --max-time 10 "$PROD_URL/api/health" || true)
+            echo "$body" | grep -q '"ok":true' && break
+            sleep 6
+          done
+          echo "$body" | grep -q '"ok":true' || { echo "::error::$PROD_URL/api/health is not healthy after deploy: $body"; exit 1; }
+          login=$(curl -s -o /dev/null -w '%{http_code} in %{time_total}s' "$PROD_URL/login")
+          {
+            echo "### 🚀 Deployed \`${GITHUB_SHA::7}\` to $PROD_URL"
+            echo; echo "| Check | Result |"; echo "|---|---|"
+            echo "| /api/health | \`$body\` |"
+            echo "| /login | HTTP $login |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

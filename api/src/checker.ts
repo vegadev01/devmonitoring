@@ -1,4 +1,3 @@
-import cron from "node-cron";
 import type { App } from "@prisma/client";
 import { prisma } from "./db";
 import { config } from "./config";
@@ -144,6 +143,8 @@ function reportSystemError(e: unknown) {
 }
 
 let running = false;
+/** Exposed by /health so external monitors can tell the check loop is alive. */
+export const checkerState: { lastRunAt: Date | null; lastError: string | null } = { lastRunAt: null, lastError: null };
 export async function runAllChecks() {
   if (running) return;
   running = true;
@@ -151,10 +152,27 @@ export async function runAllChecks() {
     const apps = await prisma.app.findMany({ where: { enabled: true } });
     await Promise.allSettled(apps.map((a) => runCheck(a)));
     await checkServers();
+    checkerState.lastRunAt = new Date();
+    checkerState.lastError = null;
   } catch (e) {
+    checkerState.lastError = (e as Error).message;
     reportSystemError(e);
   } finally {
     running = false;
+  }
+}
+
+async function pruneHistory() {
+  try {
+    const cutoff = new Date(Date.now() - config.retentionDays * 86400_000);
+    const [c, m, n] = await Promise.all([
+      prisma.check.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      prisma.metric.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+      prisma.notificationLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
+    ]);
+    if (c.count || m.count || n.count) console.log(`[retention] removed ${c.count} checks, ${m.count} metrics, ${n.count} notification logs`);
+  } catch (e) {
+    console.error("[retention] failed:", (e as Error).message);
   }
 }
 
@@ -162,14 +180,7 @@ export function startChecker() {
   console.log(`[checker] running every ${config.checkIntervalMs}ms`);
   setTimeout(runAllChecks, 3000);
   setInterval(runAllChecks, config.checkIntervalMs);
-  // Nightly retention cleanup.
-  cron.schedule("17 3 * * *", async () => {
-    const cutoff = new Date(Date.now() - config.retentionDays * 86400_000);
-    const [c, m] = await Promise.all([
-      prisma.check.deleteMany({ where: { createdAt: { lt: cutoff } } }),
-      prisma.metric.deleteMany({ where: { createdAt: { lt: cutoff } } }),
-      prisma.notificationLog.deleteMany({ where: { createdAt: { lt: cutoff } } }),
-    ]);
-    console.log(`[retention] removed ${c.count} checks, ${m.count} metrics`);
-  });
+  // Retention cleanup: shortly after start, then every 6 hours (deletes are idempotent).
+  setTimeout(pruneHistory, 60_000);
+  setInterval(pruneHistory, 6 * 3600_000);
 }

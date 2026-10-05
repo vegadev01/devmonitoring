@@ -1,0 +1,97 @@
+name: Maintenance
+
+# Weekly housekeeping: dependency and vulnerability report, plus server health, backups and cleanup.
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    name: Dependencies (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api, web]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Vulnerabilities and outdated packages
+        run: |
+          npm audit --json > audit.json || true
+          # shellcheck disable=SC2016 # single quotes on purpose: JavaScript template literals
+          node -e '
+            const a = require("./audit.json").metadata?.vulnerabilities ?? {};
+            const n = (k) => a[k] ?? 0;
+            console.log(`### ${process.argv[1]}: vulnerabilities — critical ${n("critical")}, high ${n("high")}, moderate ${n("moderate")}, low ${n("low")}`);
+          ' "${{ matrix.app }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo; echo "<details><summary>Outdated packages</summary>"; echo; echo '```'
+            npm outdated || true
+            echo '```'; echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Fail only on critical issues; Dependabot opens PRs for the rest.
+          npm audit --audit-level=critical
+
+  trivy:
+    name: Vulnerability and misconfiguration scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan repository (dependencies, Dockerfiles, secrets)
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:latest fs /src \
+            --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --format table --exit-code 0 > trivy.txt 2>&1 || true
+          { echo "### Trivy (HIGH/CRITICAL)"; echo '```'; tail -n 80 trivy.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          docker run --rm -v "$PWD:/src" aquasec/trivy:latest fs /src --scanners vuln,secret --severity CRITICAL --exit-code 1 --quiet
+
+  server:
+    name: Server health, backup and cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/devmonitor' }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          READY: ${{ secrets.SSH_PRIVATE_KEY != '' && secrets.SSH_KNOWN_HOSTS != '' && secrets.SSH_HOST != '' && secrets.SSH_USER != '' }}
+        run: |
+          echo "ready=$READY" >> "$GITHUB_OUTPUT"
+          [ "$READY" = true ] || echo "::warning::Server maintenance skipped: SSH secrets are not configured (see README → Continuous deployment)."
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ready == 'true'
+      - name: Run maintenance on the server
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          set +e
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 "$SSH_USER@$SSH_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' bash -s" < .github/scripts/remote-maintenance.sh > report.md
+          rc=$?
+          rm -f ~/.ssh/deploy_key
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          [ $rc -eq 0 ] || echo "::error::The server needs attention — see the report in the run summary"
+          exit $rc

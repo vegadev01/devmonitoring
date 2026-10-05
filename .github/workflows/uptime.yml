@@ -1,0 +1,53 @@
+name: Uptime
+
+# External check of production every 15 minutes ("who monitors the monitor").
+# A failed run means DevMonitor itself is down or degraded; GitHub emails the repo admins about failed runs.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROD_URL: ${{ vars.PROD_URL || 'http://172.236.240.167' }}
+      SLOW_MS: "2000"
+    steps:
+      - name: Probe production
+        run: |
+          probe() { # path -> "code ms"
+            curl -s -o /tmp/body -w '%{http_code} %{time_total}' --max-time 20 "$PROD_URL$1" | awk '{printf "%s %d", $1, $2*1000}'
+          }
+          check_all() {
+            fail=0; slow=0; table=""
+            for path in /api/health /login; do
+              read -r code ms < <(probe "$path")
+              ok=1; note=""
+              [ "$code" = 200 ] || ok=0
+              if [ "$path" = /api/health ]; then
+                body=$(cat /tmp/body); grep -q '"ok":true' /tmp/body || ok=0
+                note=$(echo "$body" | head -c 200)
+              fi
+              [ "$ok" = 1 ] || fail=1
+              [ "$ms" -gt "$SLOW_MS" ] && slow=1
+              table+="| \`$path\` | $([ "$ok" = 1 ] && echo ✅ || echo ❌) HTTP $code | ${ms} ms | \`${note}\` |"$'\n'
+            done
+          }
+          check_all
+          if [ "$fail" = 1 ]; then echo "First probe failed — retrying in 30s to rule out a blip"; sleep 30; check_all; fi
+          {
+            echo "### DevMonitor uptime — $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo; echo "| Endpoint | Status | Time | Detail |"; echo "|---|---|---|---|"; printf '%s' "$table"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$slow" = 1 ] && echo "::warning::A production endpoint took longer than ${SLOW_MS} ms"
+          if [ "$fail" = 1 ]; then echo "::error::DevMonitor production ($PROD_URL) is down or unhealthy"; exit 1; fi
+          echo "All endpoints healthy"
