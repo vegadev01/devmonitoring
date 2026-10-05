@@ -63,7 +63,7 @@ On the server (as `vndev`):
 sudo usermod -aG docker vndev               # deploys run without a sudo password; log out and back in
 ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N "" -C "github-actions-deploy"
 cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
-cat ~/.ssh/github_deploy                     # copy → secret SSH_PRIVATE_KEY, then: rm ~/.ssh/github_deploy
+base64 -w0 ~/.ssh/github_deploy; echo       # one long line → secret SSH_PRIVATE_KEY, then: rm ~/.ssh/github_deploy
 ssh-keyscan 172.236.240.167                  # copy → secret SSH_KNOWN_HOSTS
 ```
 
