@@ -3,24 +3,32 @@
 # Deploys exactly the tested commit; if the deploy fails its health checks, rolls back to the previous commit.
 # Env: DEPLOY_PATH (repo on the server), SHA (commit to deploy)
 set -euo pipefail
-cd "${DEPLOY_PATH:?}"
-: "${SHA:?}"
 
-PREV="$(git rev-parse HEAD)"
-git fetch --quiet origin
-git reset --hard --quiet "$SHA"
-echo "Deploying ${SHA:0:7} (currently running ${PREV:0:7})"
+# This script arrives on stdin (ssh ... bash -s). Everything is wrapped in main() so bash reads the whole
+# script before running any of it, and main runs with stdin from /dev/null; otherwise commands like
+# "docker compose exec" swallow the rest of the script and a failed deploy silently exits 0.
+main() {
+  cd "${DEPLOY_PATH:?}"
+  : "${SHA:?}"
 
-if CI=true SKIP_PULL=1 ./deploy.sh; then
-  echo "::notice::Deployed ${SHA:0:7}"
-  exit 0
-fi
+  PREV="$(git rev-parse HEAD)"
+  git fetch --quiet origin
+  git reset --hard --quiet "$SHA"
+  echo "Deploying ${SHA:0:7} (currently running ${PREV:0:7})"
 
-echo "::error::Deploy of ${SHA:0:7} failed its health checks — rolling back to ${PREV:0:7}"
-git reset --hard --quiet "$PREV"
-if CI=true SKIP_PULL=1 ./deploy.sh; then
-  echo "::warning::Rolled back to ${PREV:0:7}. Database migrations from the failed release are not reverted; a pre-deploy backup is in $(pwd)/backups/"
-else
-  echo "::error::Rollback ALSO failed — the site may be down. SSH in and check: docker compose ps / docker compose logs"
-fi
-exit 1
+  if CI=true SKIP_PULL=1 ./deploy.sh; then
+    echo "::notice::Deployed ${SHA:0:7}"
+    exit 0
+  fi
+
+  echo "::error::Deploy of ${SHA:0:7} failed its health checks — rolling back to ${PREV:0:7}"
+  git reset --hard --quiet "$PREV"
+  if CI=true SKIP_PULL=1 ./deploy.sh; then
+    echo "::warning::Rolled back to ${PREV:0:7}. Database migrations from the failed release are not reverted; a pre-deploy backup is in $(pwd)/backups/"
+  else
+    echo "::error::Rollback ALSO failed — the site may be down. SSH in and check: docker compose ps / docker compose logs"
+  fi
+  exit 1
+}
+
+main </dev/null

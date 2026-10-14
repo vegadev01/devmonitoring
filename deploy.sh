@@ -82,6 +82,7 @@ fi
 if [ -n "$(docker compose ps -q --status running db 2>/dev/null)" ]; then
   say "Backing up the database"
   mkdir -p backups
+  [ -w backups ] || die "backups/ is not writable by $(id -un) — run once on the server: sudo chown -R $(id -un): $(pwd)/backups"
   BK="backups/predeploy-$(date -u +%Y%m%d-%H%M%S).sql.gz"
   if docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > "$BK"; then
     chmod 600 "$BK"
