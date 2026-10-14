@@ -23,53 +23,58 @@ const toSessionUser = (u: { id: string; username: string; role: string }): Sessi
   role: u.role === "admin" ? "admin" : "staff",
 });
 
+/** Usernames are stored lowercase: 3–32 letters, digits, dots, dashes or underscores. */
+export const normalizeUsername = (u: string) => u.trim().toLowerCase();
+export const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
+
 /**
- * Creates the admin/staff accounts named in .env, keeping their password and role in sync with it.
- * .env is the source of truth: accounts it no longer names (e.g. a renamed admin) are removed.
+ * Seeds accounts from .env. Accounts are managed on the Users page, so .env is only used:
+ *  - on first start (no accounts yet): ADMIN_USER and STAFF_USER are created;
+ *  - for recovery: if no admin account exists any more, ADMIN_USER is (re)created as admin.
  */
 export async function ensureUsers() {
-  const accounts = ([
-    { username: config.adminUser, passwordHash: config.adminPasswordHash, role: "admin" },
-    { username: config.staffUser, passwordHash: config.staffPasswordHash, role: "staff" },
-  ] as { username: string; passwordHash: string; role: Role }[]).filter((a) => a.username && a.passwordHash);
-  if (!accounts.length) return;
+  const admin = { username: normalizeUsername(config.adminUser), passwordHash: config.adminPasswordHash, role: "admin" as Role };
+  const staff = { username: normalizeUsername(config.staffUser), passwordHash: config.staffPasswordHash, role: "staff" as Role };
 
-  const { count } = await prisma.user.deleteMany({ where: { username: { notIn: accounts.map((a) => a.username) } } });
-  if (count) console.log(`[auth] removed ${count} account(s) no longer configured in .env`);
-  for (const a of accounts) {
-    await prisma.user.upsert({
-      where: { username: a.username },
-      create: a,
-      // Admins can never be blocked, so clear any lock left over from a previous role.
-      update: { passwordHash: a.passwordHash, role: a.role, ...(a.role === "admin" ? { blockedAt: null, failedAttempts: 0 } : {}) },
-    });
+  if ((await prisma.user.count()) === 0) {
+    for (const a of [admin, staff]) {
+      if (!a.username || !a.passwordHash) continue;
+      await prisma.user.create({ data: a });
+      console.log(`[auth] created ${a.role} account "${a.username}" from .env`);
+    }
+    return;
+  }
+  if (admin.username && admin.passwordHash && (await prisma.user.count({ where: { role: "admin" } })) === 0) {
+    const reset = { passwordHash: admin.passwordHash, role: admin.role, blockedAt: null, blockedBy: null, failedAttempts: 0, tokenVersion: { increment: 1 } };
+    await prisma.user.upsert({ where: { username: admin.username }, create: admin, update: reset });
+    console.log(`[auth] no admin account found — restored "${admin.username}" from .env`);
   }
 }
 
-export type LoginResult = { ok: true; user: SessionUser } | { ok: false; reason: "invalid" | "blocked" };
+export type LoginResult = { ok: true; user: SessionUser & { tokenVersion: number } } | { ok: false; reason: "invalid" | "blocked" | "blocked_by_admin" };
 
-export async function verifyLogin(username: string, password: string): Promise<LoginResult> {
-  const user = await prisma.user.findUnique({ where: { username } });
+export async function verifyLogin(rawUsername: string, password: string): Promise<LoginResult> {
+  const user = await prisma.user.findUnique({ where: { username: normalizeUsername(rawUsername) } });
   const passOk = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user) return { ok: false, reason: "invalid" };
 
   const lockable = user.role !== "admin";
-  if (lockable && user.blockedAt) return { ok: false, reason: "blocked" };
+  if (lockable && user.blockedAt) return { ok: false, reason: user.blockedBy ? "blocked_by_admin" : "blocked" };
 
   if (!passOk) {
     if (!lockable) return { ok: false, reason: "invalid" };
     const u = await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: { increment: 1 } } });
     if (u.failedAttempts < MAX_FAILED_ATTEMPTS) return { ok: false, reason: "invalid" };
-    await prisma.user.updateMany({ where: { id: user.id, blockedAt: null }, data: { blockedAt: new Date() } });
+    await prisma.user.updateMany({ where: { id: user.id, blockedAt: null }, data: { blockedAt: new Date(), blockedBy: null } });
     return { ok: false, reason: "blocked" };
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lastLoginAt: new Date() } });
-  return { ok: true, user: toSessionUser(user) };
+  return { ok: true, user: { ...toSessionUser(user), tokenVersion: user.tokenVersion } };
 }
 
-export function issueSession(res: Response, user: SessionUser) {
-  const token = jwt.sign({ sub: user.username }, config.sessionSecret, { expiresIn: "7d" });
+export function issueSession(res: Response, user: { id: string; tokenVersion: number }) {
+  const token = jwt.sign({ sub: user.id, v: user.tokenVersion }, config.sessionSecret, { expiresIn: "7d" });
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -79,18 +84,18 @@ export function issueSession(res: Response, user: SessionUser) {
   });
 }
 
-/** Resolves the session cookie to an account that still exists and isn't blocked. */
+/** Resolves the session cookie to an account that still exists, isn't blocked and hasn't changed password since. */
 export async function readSession(req: Request): Promise<SessionUser | null> {
   const token = req.cookies?.[COOKIE];
   if (!token) return null;
-  let username: string;
+  let claims: { sub: string; v?: number };
   try {
-    username = (jwt.verify(token, config.sessionSecret) as { sub: string }).sub;
+    claims = jwt.verify(token, config.sessionSecret) as { sub: string; v?: number };
   } catch {
     return null;
   }
-  const user = await prisma.user.findUnique({ where: { username } });
-  if (!user || (user.role !== "admin" && user.blockedAt)) return null;
+  const user = await prisma.user.findUnique({ where: { id: claims.sub } });
+  if (!user || user.tokenVersion !== claims.v || (user.role !== "admin" && user.blockedAt)) return null;
   return toSessionUser(user);
 }
 

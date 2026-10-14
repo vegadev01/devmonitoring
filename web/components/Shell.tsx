@@ -25,13 +25,18 @@ export function Shell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false); // desktop rail
   const [scrolled, setScrolled] = useState(false);
   const [ready, setReady] = useState(false);
-  const [me, setMe] = useState<{ user: string; role: "admin" | "staff" } | null>(null);
+  const [me, setMe] = useState<{ id: string; user: string; role: "admin" | "staff" } | null>(null);
   const { data: ov } = useApi<{ openIncidents: number; apps: { down: number } }>(ready ? "/overview" : null, 30_000);
 
   useEffect(() => {
-    api<{ user: string; role: "admin" | "staff" }>("/auth/me").then((m) => { setMe(m); setReady(true); }).catch(() => router.replace("/login"));
+    api<{ id: string; user: string; role: "admin" | "staff" }>("/auth/me").then((m) => { setMe(m); setReady(true); }).catch(() => router.replace("/login"));
   }, [router]);
   useEffect(() => setOpen(false), [path]);
+  // Admin-only pages don't exist for staff: send them back to the overview.
+  const adminOnlyPath = NAV.some((n) => n.adminOnly && path.startsWith(n.href));
+  useEffect(() => {
+    if (me && me.role !== "admin" && adminOnlyPath) router.replace("/");
+  }, [me, adminOnlyPath, router]);
   useEffect(() => {
     try { setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1"); } catch { /* storage unavailable */ }
   }, []);
@@ -62,7 +67,7 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("scroll", on);
   }, []);
 
-  if (!ready) return <div className="login"><img src="/logo.svg" alt="" className="logo" style={{ width: 64, animation: "float 2s ease-in-out infinite" }} /></div>;
+  if (!ready || (me?.role !== "admin" && adminOnlyPath)) return <div className="login"><img src="/logo.svg" alt="" className="logo" style={{ width: 64, animation: "float 2s ease-in-out infinite" }} /></div>;
 
   const base = "/" + (path.split("/")[1] ?? "");
   const title = TITLES[base] ?? "DevMonitor";

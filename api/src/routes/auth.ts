@@ -17,6 +17,9 @@ authRouter.post("/login", async (req, res, next) => {
     const result = typeof username === "string" && typeof password === "string" ? await verifyLogin(username, password) : null;
     if (!result?.ok) {
       attempts.set(ip, a && a.reset > now ? { n: a.n + 1, reset: a.reset } : { n: 1, reset: now + 600_000 });
+      if (result?.reason === "blocked_by_admin") {
+        return res.status(403).json({ error: "This account has been blocked by an admin. Ask an admin to unblock it." });
+      }
       if (result?.reason === "blocked") {
         return res.status(403).json({ error: `This account is blocked after ${MAX_FAILED_ATTEMPTS} failed sign-in attempts. Ask an admin to unblock it.` });
       }
@@ -24,7 +27,7 @@ authRouter.post("/login", async (req, res, next) => {
     }
     attempts.delete(ip);
     issueSession(res, result.user);
-    res.json({ user: result.user.username, role: result.user.role });
+    res.json({ id: result.user.id, user: result.user.username, role: result.user.role });
   } catch (e) {
     next(e);
   }
@@ -39,7 +42,7 @@ authRouter.get("/me", async (req, res, next) => {
   try {
     const user = await readSession(req);
     if (!user) return res.status(401).json({ error: "Unauthorized" });
-    res.json({ user: user.username, role: user.role });
+    res.json({ id: user.id, user: user.username, role: user.role });
   } catch (e) {
     next(e);
   }

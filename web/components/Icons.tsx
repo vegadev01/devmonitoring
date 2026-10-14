@@ -27,3 +27,4 @@ export const IconArrowLeft = mk(<path d="M19 12H5M11 18l-6-6 6-6" />);
 export const IconSidebar = mk(<><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /><path d="M14 10l2 2-2 2" /></>);
 export const IconBell = mk(<><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 003.4 0" /></>);
 export const IconUsers = mk(<><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0" /><path d="M16 4.5a3.5 3.5 0 010 7M18 14.5a6.5 6.5 0 013.5 5.5" /></>);
+export const IconEdit = mk(<><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></>);

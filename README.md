@@ -15,7 +15,7 @@ Monitors every Veganext application (HTTP health checks) and server (resource ag
 2. `cp .env.example .env` and set:
    - `POSTGRES_PASSWORD` (and the same password inside `DATABASE_URL`)
    - `ADMIN_PASSWORD_HASH` — `node api/scripts/hash-password.js "your-password"` (paste the *escaped* line)
-   - `STAFF_PASSWORD_HASH` (optional) — same command, for the `STAFF_USER` account
+   - `STAFF_PASSWORD_HASH` (optional) — same command, for the `STAFF_USER` account (both are only used to create the first accounts)
    - `SESSION_SECRET` — `openssl rand -hex 32`
    - SMTP settings + `ALERT_TO_EMAIL` for alert emails
 3. `docker compose up -d --build`
@@ -28,7 +28,8 @@ Local run without a domain: set `PUBLIC_*_URL` to `http://localhost:3000` (or `W
 - Every `CHECK_INTERVAL_MS` each enabled app is probed (its health-check endpoint if set, otherwise its URL). **Two consecutive failures** open an incident; the first success resolves it.
 - A server whose agent is silent for `SERVER_OFFLINE_AFTER_MS` is flagged offline (incident + email).
 - History older than `RETENTION_DAYS` is pruned nightly.
-- **Accounts & lockout:** two roles — `admin` (`ADMIN_USER`) and `staff` (`STAFF_USER`), created from `.env` when the API starts. A staff account is blocked after 3 wrong passwords in a row and stays blocked until an admin clicks **Unblock** on the **Users** page (admin-only). Admin accounts are never blocked; every login is still rate-limited to 8 attempts per 10 minutes per IP.
+- **Accounts & lockout:** two roles, `admin` and `staff`. Admins manage accounts on the **Users** page (add, rename, change role or password, block/unblock, delete); staff don't see that page. A staff account is blocked after 3 wrong passwords in a row (or by an admin) and stays blocked until an admin unblocks it. Admin accounts are never blocked, an admin can't delete/demote themselves, and the last admin can't be removed. Changing a password signs that account out everywhere. Every login is also rate-limited to 8 attempts per 10 minutes per IP.
+  - `.env` (`ADMIN_*`, `STAFF_*`) only creates the first accounts. **Locked out of every admin account?** Remove the admin rows and restart — `ADMIN_USER` is recreated from `.env`: `docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DELETE FROM \"User\" WHERE role = '"'"'admin'"'"'"' && docker compose restart api`
 - **Email alerts:** every issue (app down/recovered, server offline/back online, checker failure) is emailed to each admin under **Notifications** with the issue type, affected service, endpoint, timestamp and error details. Each recipient gets their own message, failed sends are retried (3 attempts), and every delivery is logged on the Notifications page. Timestamps are shown in each admin's own time zone (read from their Outlook settings, or set per person on the Notifications page). Use **Send test email** to verify.
 
 ## Email alerts with Microsoft 365
