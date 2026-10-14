@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db";
-import { newApiKey, requireAdmin, safeEqual, sha256 } from "../auth";
+import { newApiKey, requireAuth, safeEqual, sha256 } from "../auth";
 import { config } from "../config";
 import { downsample, parseRange } from "../range";
 
@@ -31,7 +31,7 @@ serversRouter.post("/:id/metrics", async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-serversRouter.use(requireAdmin);
+serversRouter.use(requireAuth);
 
 function withStatus<T extends { lastSeenAt: Date | null }>(s: T) {
   const online = !!s.lastSeenAt && Date.now() - s.lastSeenAt.getTime() <= config.serverOfflineAfterMs;

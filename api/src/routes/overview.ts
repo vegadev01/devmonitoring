@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../db";
-import { requireAdmin } from "../auth";
+import { requireAuth } from "../auth";
 import { config } from "../config";
 
 export const overviewRouter = Router();
-overviewRouter.use(requireAdmin);
+overviewRouter.use(requireAuth);
 
 overviewRouter.get("/overview", async (_req, res) => {
   const since = new Date(Date.now() - 24 * 3600e3);

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, useApi } from "@/lib/api";
-import { IconAlert, IconApps, IconBell, IconBolt, IconHome, IconLogout, IconServer, IconSidebar } from "./Icons";
+import { IconAlert, IconApps, IconBell, IconBolt, IconHome, IconLogout, IconServer, IconSidebar, IconUsers } from "./Icons";
 
 const NAV = [
   { href: "/", label: "Overview", Icon: IconHome },
@@ -12,10 +12,11 @@ const NAV = [
   { href: "/incidents", label: "Incidents", Icon: IconAlert },
   { href: "/studio", label: "API Studio", Icon: IconBolt },
   { href: "/notifications", label: "Notifications", Icon: IconBell },
+  { href: "/users", label: "Users", Icon: IconUsers, adminOnly: true },
 ];
 const COLLAPSE_KEY = "dm.sidebar.collapsed";
 
-const TITLES: Record<string, string> = { "/": "Overview", "/apps": "Applications", "/servers": "Servers", "/incidents": "Incidents", "/studio": "API Studio", "/notifications": "Notifications" };
+const TITLES: Record<string, string> = { "/": "Overview", "/apps": "Applications", "/servers": "Servers", "/incidents": "Incidents", "/studio": "API Studio", "/notifications": "Notifications", "/users": "Users" };
 
 export function Shell({ children }: { children: ReactNode }) {
   const path = usePathname();
@@ -24,10 +25,11 @@ export function Shell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false); // desktop rail
   const [scrolled, setScrolled] = useState(false);
   const [ready, setReady] = useState(false);
+  const [me, setMe] = useState<{ user: string; role: "admin" | "staff" } | null>(null);
   const { data: ov } = useApi<{ openIncidents: number; apps: { down: number } }>(ready ? "/overview" : null, 30_000);
 
   useEffect(() => {
-    api("/auth/me").then(() => setReady(true)).catch(() => router.replace("/login"));
+    api<{ user: string; role: "admin" | "staff" }>("/auth/me").then((m) => { setMe(m); setReady(true); }).catch(() => router.replace("/login"));
   }, [router]);
   useEffect(() => setOpen(false), [path]);
   useEffect(() => {
@@ -74,7 +76,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <img src="/logo.svg" alt="Veganext" />
           <div className="brand-text"><b>DevMonitor</b><small>Veganext</small></div>
         </div>
-        {NAV.map(({ href, label, Icon }) => {
+        {NAV.filter((n) => !n.adminOnly || me?.role === "admin").map(({ href, label, Icon }) => {
           const active = href === "/" ? path === "/" : path.startsWith(href);
           return (
             <Link key={href} href={href} className={`nav-link ${active ? "active" : ""}`} title={collapsed ? label : undefined} aria-label={label}>
@@ -88,7 +90,7 @@ export function Shell({ children }: { children: ReactNode }) {
             onClick={async () => { await api("/auth/logout", { method: "POST" }); router.replace("/login"); }}>
             <IconLogout /><span className="nav-label">Sign out</span>
           </button>
-          <small className="muted sidebar-host">devmonitor.veganext.com</small>
+          <small className="muted sidebar-host" title={me ? `Signed in as ${me.user} (${me.role})` : undefined}>{me ? `${me.user} · ${me.role}` : "devmonitor.veganext.com"}</small>
         </div>
       </aside>
       <div className="main">

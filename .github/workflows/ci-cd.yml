@@ -70,7 +70,7 @@ jobs:
           echo "health: $(curl -sS localhost:4010/health)"
           curl -fsS localhost:4010/health | grep -q '"ok":true'
           # Protected routes must reject anonymous requests.
-          for path in /overview /apps /servers /notifications /studio/requests; do
+          for path in /overview /apps /servers /notifications /studio/requests /users; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "localhost:4010$path")
             [ "$code" = 401 ] || { echo "::error::$path returned $code without a session (expected 401)"; exit 1; }
           done

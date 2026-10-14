@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../db";
-import { requireAdmin } from "../auth";
+import { requireAuth } from "../auth";
 import { probe, runCheck } from "../checker";
 import { downsample, parseRange } from "../range";
 
 export const appsRouter = Router();
-appsRouter.use(requireAdmin);
+appsRouter.use(requireAuth);
 
 function parseBody(b: any, partial = false) {
   const data: Record<string, unknown> = {};

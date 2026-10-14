@@ -10,6 +10,8 @@ import { serversRouter } from "./routes/servers";
 import { overviewRouter } from "./routes/overview";
 import { studioRouter } from "./routes/studio";
 import { notificationsRouter } from "./routes/notifications";
+import { usersRouter } from "./routes/users";
+import { ensureUsers } from "./auth";
 import { verifyMail } from "./notify";
 
 const app = express();
@@ -45,6 +47,7 @@ app.use("/auth", authRouter);
 app.use("/apps", appsRouter);
 app.use("/servers", serversRouter);
 app.use("/notifications", notificationsRouter);
+app.use("/users", usersRouter);
 app.use("/", overviewRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -52,8 +55,12 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(config.port, () => {
-  console.log(`[api] listening on :${config.port}`);
-  startChecker();
-  verifyMail();
-});
+ensureUsers()
+  .catch((e) => console.error("[api] could not sync login accounts from .env:", e))
+  .finally(() => {
+    app.listen(config.port, () => {
+      console.log(`[api] listening on :${config.port}`);
+      startChecker();
+      verifyMail();
+    });
+  });

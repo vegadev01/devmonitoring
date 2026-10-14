@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { prisma } from "../db";
-import { requireAdmin } from "../auth";
+import { currentUser, requireAuth } from "../auth";
 import { config } from "../config";
 import { isValidTz, outlookTimezonesAvailable } from "../graph";
 import { EMAIL_RE, envRecipients, mailConfigured, notifyNow, providerInfo, resolveTimezone } from "../notify";
 
 export const notificationsRouter = Router();
-notificationsRouter.use(requireAdmin);
+notificationsRouter.use(requireAuth);
 
 notificationsRouter.get("/", async (_req, res) => {
   const [rows, log] = await Promise.all([
@@ -68,7 +68,7 @@ notificationsRouter.post("/test", async (req, res) => {
       service: { kind: "System", name: "DevMonitor" },
       occurredAt: new Date(),
       details: [
-        ["Requested by", String((req as any).user ?? "admin")],
+        ["Requested by", currentUser(req).username],
         ["Purpose", "Confirms that issue alerts reach the admin list"],
       ],
       link: config.publicWebUrl,

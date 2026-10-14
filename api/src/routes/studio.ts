@@ -1,14 +1,14 @@
 import express, { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { requireAdmin } from "../auth";
+import { requireAuth } from "../auth";
 import { describeError, send } from "../httpclient";
 
 // API Studio: Veganext's built-in endpoint tester. Requests run server-side so they work against
 // internal hosts, self-signed certs and APIs without CORS. Admin-only.
 export const studioRouter = Router();
 studioRouter.use(express.json({ limit: "5mb" }));
-studioRouter.use(requireAdmin);
+studioRouter.use(requireAuth);
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const MAX_BODY = 2 * 1024 * 1024;

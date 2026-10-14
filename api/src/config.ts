@@ -2,8 +2,10 @@ import "dotenv/config";
 
 export const config = {
   port: Number(process.env.PORT || 4000),
-  adminUser: process.env.ADMIN_USER || "admin",
+  adminUser: process.env.ADMIN_USER || "admin_veganext",
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || "",
+  staffUser: process.env.STAFF_USER || "staff_veganext",
+  staffPasswordHash: process.env.STAFF_PASSWORD_HASH || "",
   sessionSecret: process.env.SESSION_SECRET || "change-me-too",
   checkIntervalMs: Number(process.env.CHECK_INTERVAL_MS || 120_000),
   serverOfflineAfterMs: Number(process.env.SERVER_OFFLINE_AFTER_MS || 300_000),

@@ -132,3 +132,15 @@ model NotificationLog {
 
   @@index([createdAt])
 }
+
+// Console login accounts. The admin/staff accounts named in .env are created/updated on startup.
+model User {
+  id             String    @id @default(cuid())
+  username       String    @unique
+  passwordHash   String
+  role           String    @default("staff") // admin | staff
+  failedAttempts Int       @default(0) // consecutive wrong passwords; reset on success or unblock
+  blockedAt      DateTime? // set after 3 failed attempts (never for admins); cleared by an admin
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+}
